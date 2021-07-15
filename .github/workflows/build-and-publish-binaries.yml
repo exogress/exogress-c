@@ -130,8 +130,6 @@ jobs:
           command: build
           args: --release --target=${{ matrix.target }}
 
-      - run: ls -la ./target/${{ matrix.target }}/release
-
       - name: Upload .a release binary (non-Windows)
         uses: actions/upload-release-asset@v1.0.2
         if: matrix.os != 'windows-latest'
@@ -156,7 +154,7 @@ jobs:
 
       - name: Upload lib release binary (so)
         uses: actions/upload-release-asset@v1.0.2
-        if: matrix.os == 'ubuntu-latest'
+        if: matrix.os == 'ubuntu-latest' && ontains(matrix.target, 'gnu')
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
