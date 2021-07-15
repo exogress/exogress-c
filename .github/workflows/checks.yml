@@ -1,0 +1,113 @@
+name: Checks
+
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+    branches:
+      - master
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - command: fmt
+            args: --all -- --check
+          - command: clippy
+    env:
+      RUST_BACKTRACE: 1
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v1
+        with:
+          submodules: true
+
+      - uses: Swatinem/rust-cache@v1
+
+      - name: Run cargo
+        uses: actions-rs/cargo@v1
+        with:
+          command: ${{ matrix.command }}
+          args: ${{ matrix.args }}
+
+  native-checks:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os:
+          - ubuntu-latest
+          - macOS-latest
+          - windows-latest
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            features: jemalloc
+          - os: macOS-latest
+            target: x86_64-apple-darwin
+            features: jemalloc
+          - os: windows-latest
+            target: i686-pc-windows-msvc
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+    env:
+      RUST_BACKTRACE: 1
+
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v1
+        with:
+          submodules: true
+
+      - uses: Swatinem/rust-cache@v1
+
+      - name: Build
+        uses: actions-rs/cargo@v1
+        with:
+          command: build
+          args: --target=${{ matrix.target }} --features=${{ matrix.features }}
+
+      - name: Run cargo test
+        uses: actions-rs/cargo@v1
+        with:
+          command: test
+          args: --target=${{ matrix.target }} --features=${{ matrix.features }}
+
+  cross-checks:
+    needs: native-checks
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: aarch64-unknown-linux-gnu
+          - target: aarch64-unknown-linux-musl
+          - target: arm-unknown-linux-gnueabi
+          - target: arm-unknown-linux-gnueabihf
+          - target: arm-unknown-linux-musleabi
+          - target: arm-unknown-linux-musleabihf
+          - target: armv5te-unknown-linux-gnueabi
+          - target: armv5te-unknown-linux-musleabi
+          - target: armv7-unknown-linux-gnueabihf
+          - target: armv7-unknown-linux-musleabihf
+          - target: x86_64-unknown-linux-gnu
+          - target: x86_64-unknown-linux-musl
+    env:
+      RUST_BACKTRACE: 1
+
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v1
+        with:
+          submodules: true
+
+      - uses: Swatinem/rust-cache@v1
+
+      - name: Build
+        uses: actions-rs/cargo@v1
+        with:
+          use-cross: true
+          command: build
+          args: --target=${{ matrix.target }} -p exogress --features=${{ matrix.features }}
