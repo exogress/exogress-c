@@ -1,21 +1,23 @@
-use std::os::raw::c_char;
+use anyhow::bail;
+use core::{mem, slice};
+use exogress_common::client_core::Client;
+use exogress_common::entities::{
+    AccessKeyId, AccountName, LabelName, LabelValue, ProjectName, SmolStr,
+};
+use futures::channel::mpsc::{UnboundedReceiver, UnboundedSender};
+use futures::channel::{mpsc, oneshot};
+use hashbrown::hash_map::Entry;
 use hashbrown::HashMap;
-use core::{slice, mem};
-use exogress_common::entities::{AccessKeyId, AccountName, ProjectName, LabelValue, LabelName, SmolStr};
-use parking_lot::{RwLock, Once};
-use std::str::FromStr;
-use std::ffi::CStr;
 use lazy_static::lazy_static;
-use std::sync::Arc;
+use log::{info, Level, LevelFilter, Metadata, Record};
+use parking_lot::{Once, RwLock};
+use std::ffi::CStr;
 use std::ffi::CString;
+use std::os::raw::c_char;
+use std::str::FromStr;
+use std::sync::Arc;
 use tokio::runtime::Runtime;
 use trust_dns_resolver::{TokioAsyncResolver, TokioHandle};
-use hashbrown::hash_map::Entry;
-use futures::channel::mpsc::{UnboundedSender, UnboundedReceiver};
-use futures::channel::{oneshot, mpsc};
-use exogress_common::client_core::Client;
-use log::{info, Metadata, Level, Record, LevelFilter};
-use anyhow::bail;
 
 const CRATE_VERSION: &'static str = env!("CARGO_PKG_VERSION");
 
@@ -44,11 +46,16 @@ enum InstanceState {
 }
 
 impl InstanceState {
-    fn switch_to_spawned(&mut self) -> anyhow::Result<(Client, UnboundedSender<()>, UnboundedReceiver<()>, oneshot::Receiver<()>)> {
+    fn switch_to_spawned(
+        &mut self,
+    ) -> anyhow::Result<(
+        Client,
+        UnboundedSender<()>,
+        UnboundedReceiver<()>,
+        oneshot::Receiver<()>,
+    )> {
         let cfg = match self {
-            InstanceState::Initialized(cfg) => {
-                cfg
-            }
+            InstanceState::Initialized(cfg) => cfg,
             InstanceState::Spawned(_) => {
                 bail!("already spawned")
             }
@@ -65,9 +72,12 @@ impl InstanceState {
         let old = mem::replace(self, spawned);
 
         match old {
-            InstanceState::Initialized(cfg) => {
-                Ok((cfg.client_builder.build()?, cfg.reload_config_tx.clone(), cfg.reload_config_rx, cfg.stop_rx))
-            }
+            InstanceState::Initialized(cfg) => Ok((
+                cfg.client_builder.build()?,
+                cfg.reload_config_tx.clone(),
+                cfg.reload_config_rx,
+                cfg.stop_rx,
+            )),
             _ => unreachable!(),
         }
     }
@@ -103,37 +113,34 @@ pub type InstanceId = u32;
 
 lazy_static! {
     static ref STORAGE: Arc<RwLock<Storage>> = { Arc::new(RwLock::new(Default::default())) };
-    static ref EXOGRESS_VERSION: CString = { CString::new(exogress_common::client_core::VERSION).unwrap() };
+    static ref EXOGRESS_VERSION: CString =
+        { CString::new(exogress_common::client_core::VERSION).unwrap() };
 }
 
 macro_rules! parse_c_str {
     ($var:ident) => {
         match unsafe { CStr::from_ptr($var) }.to_str() {
-            Ok(s) => {
-                match s.parse() {
-                    Ok(entity) => entity,
-                    Err(e) => {
-                        todo!()
-                    }
+            Ok(s) => match s.parse() {
+                Ok(entity) => entity,
+                Err(e) => {
+                    todo!()
                 }
             },
             Err(e) => {
                 todo!();
             }
         }
-    }
+    };
 }
 macro_rules! read_string {
     ($var:ident) => {
         match unsafe { CStr::from_ptr($var) }.to_str() {
-            Ok(s) => {
-                s.to_string()
-            },
+            Ok(s) => s.to_string(),
             Err(e) => {
                 todo!();
             }
         }
-    }
+    };
 }
 
 #[no_mangle]
@@ -163,9 +170,7 @@ pub extern "C" fn exogress_instance_init(
 
     let access_key_id: AccessKeyId = parse_c_str!(access_key_id);
     let secret_access_key: String = match unsafe { CStr::from_ptr(secret_access_key) }.to_str() {
-        Ok(s) => {
-            s.to_string()
-        }
+        Ok(s) => s.to_string(),
         Err(e) => {
             todo!();
         }
@@ -212,7 +217,6 @@ pub extern "C" fn exogress_instance_init(
     instance_id.into()
 }
 
-
 #[no_mangle]
 ///
 /// Add a lobel to exogress instance. Should be called before spawning
@@ -223,8 +227,7 @@ pub extern "C" fn exogress_instance_add_label(
     value: *const c_char,
 ) {
     let mut h = STORAGE.write();
-    if let Some(&mut InstanceState::Initialized(ref mut cfg)) = h.map.get_mut(&instance_id)
-    {
+    if let Some(&mut InstanceState::Initialized(ref mut cfg)) = h.map.get_mut(&instance_id) {
         let name: LabelName = parse_c_str!(name);
         let value: LabelValue = parse_c_str!(value);
 
@@ -236,44 +239,32 @@ pub extern "C" fn exogress_instance_add_label(
 ///
 /// Set config path to exogress instance. Should be called before spawning
 ///
-pub extern "C" fn exogress_instance_set_config_path(
-    instance_id: InstanceId,
-    path: *const c_char,
-) {
+pub extern "C" fn exogress_instance_set_config_path(instance_id: InstanceId, path: *const c_char) {
     let mut h = STORAGE.write();
-    if let Some(&mut InstanceState::Initialized(ref mut cfg)) = h.map.get_mut(&instance_id)
-    {
+    if let Some(&mut InstanceState::Initialized(ref mut cfg)) = h.map.get_mut(&instance_id) {
         let path = read_string!(path);
 
         cfg.client_builder.config_path(path);
     }
 }
 
-
 #[no_mangle]
 ///
 /// Set config path to exogress instance. Should be called before spawning
 ///
-pub extern "C" fn exogress_instance_set_watch_config(
-    instance_id: InstanceId,
-    should_watch: bool,
-) {
+pub extern "C" fn exogress_instance_set_watch_config(instance_id: InstanceId, should_watch: bool) {
     let mut h = STORAGE.write();
-    if let Some(&mut InstanceState::Initialized(ref mut cfg)) = h.map.get_mut(&instance_id)
-    {
+    if let Some(&mut InstanceState::Initialized(ref mut cfg)) = h.map.get_mut(&instance_id) {
         cfg.client_builder.watch_config(should_watch);
     }
 }
-
 
 ///
 /// Spawn Exogress instance. This function will be blocked until instance is terminated.
 /// The wrapper should run it inside a thread
 ///
 #[no_mangle]
-pub extern "C" fn exogress_instance_spawn(
-    instance_id: InstanceId,
-) {
+pub extern "C" fn exogress_instance_spawn(instance_id: InstanceId) {
     let mut h = STORAGE.write();
     let entry = h.map.entry(instance_id);
     let (client, reload_config_tx, reload_config_rx, stop_rx) = match entry {
@@ -303,26 +294,26 @@ pub extern "C" fn exogress_instance_spawn(
 
     let rt = Runtime::new().expect("TODO");
 
-    let resolver = TokioAsyncResolver::from_system_conf(TokioHandle)
-        .expect("TODO");
+    let resolver = TokioAsyncResolver::from_system_conf(TokioHandle).expect("TODO");
 
     rt.block_on(async move {
         let spawn = client.spawn(reload_config_tx, reload_config_rx, resolver);
 
         tokio::select! {
-                    r = spawn => {
-                        if let Err(e) = r {
-                            info!("error: {}", e);
-                            todo!();
-                        }
-                    },
-                    _ = stop_rx => {
-                        info!("stop exogress instance by request");
-                    }
+            r = spawn => {
+                if let Err(e) = r {
+                    info!("error: {}", e);
+                    todo!();
                 }
+            },
+            _ = stop_rx => {
+                info!("stop exogress instance by request");
+            }
+        }
 
         Ok::<_, anyhow::Error>(())
-    }).expect("TODO");
+    })
+    .expect("TODO");
 }
 
 #[no_mangle]
