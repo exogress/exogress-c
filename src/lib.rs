@@ -2,7 +2,6 @@ use core::mem;
 use std::{
     ffi::{CStr, CString},
     os::raw::c_char,
-    str::FromStr,
     sync::Arc,
 };
 
@@ -23,7 +22,7 @@ use parking_lot::{Once, RwLock};
 use tokio::runtime::Runtime;
 use trust_dns_resolver::{TokioAsyncResolver, TokioHandle};
 
-const CRATE_VERSION: &'static str = env!("CARGO_PKG_VERSION");
+const CRATE_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 struct SimpleLogger;
 
@@ -49,15 +48,15 @@ enum InstanceState {
     Stopped,
 }
 
+struct SpawnInfo {
+    client: Client,
+    reload_config_tx: UnboundedSender<()>,
+    reload_config_rx: UnboundedReceiver<()>,
+    stop_rx: oneshot::Receiver<()>,
+}
+
 impl InstanceState {
-    fn switch_to_spawned(
-        &mut self,
-    ) -> anyhow::Result<(
-        Client,
-        UnboundedSender<()>,
-        UnboundedReceiver<()>,
-        oneshot::Receiver<()>,
-    )> {
+    fn switch_to_spawned(&mut self) -> anyhow::Result<SpawnInfo> {
         let cfg = match self {
             InstanceState::Initialized(cfg) => cfg,
             InstanceState::Spawned(_) => {
@@ -76,12 +75,12 @@ impl InstanceState {
         let old = mem::replace(self, spawned);
 
         match old {
-            InstanceState::Initialized(cfg) => Ok((
-                cfg.client_builder.build()?,
-                cfg.reload_config_tx.clone(),
-                cfg.reload_config_rx,
-                cfg.stop_rx,
-            )),
+            InstanceState::Initialized(cfg) => Ok(SpawnInfo {
+                client: cfg.client_builder.build()?,
+                reload_config_tx: cfg.reload_config_tx.clone(),
+                reload_config_rx: cfg.reload_config_rx,
+                stop_rx: cfg.stop_rx,
+            }),
             _ => unreachable!(),
         }
     }
@@ -116,21 +115,21 @@ impl Storage {
 pub type InstanceId = u32;
 
 lazy_static! {
-    static ref STORAGE: Arc<RwLock<Storage>> = { Arc::new(RwLock::new(Default::default())) };
+    static ref STORAGE: Arc<RwLock<Storage>> = Arc::new(RwLock::new(Default::default()));
     static ref EXOGRESS_VERSION: CString =
-        { CString::new(exogress_common::client_core::VERSION).unwrap() };
+        CString::new(exogress_common::client_core::VERSION).unwrap();
 }
 
 macro_rules! parse_c_str {
     ($var:ident) => {
-        match unsafe { CStr::from_ptr($var) }.to_str() {
+        match CStr::from_ptr($var).to_str() {
             Ok(s) => match s.parse() {
                 Ok(entity) => entity,
-                Err(e) => {
+                Err(_e) => {
                     todo!()
                 }
             },
-            Err(e) => {
+            Err(_e) => {
                 todo!();
             }
         }
@@ -138,9 +137,9 @@ macro_rules! parse_c_str {
 }
 macro_rules! read_string {
     ($var:ident) => {
-        match unsafe { CStr::from_ptr($var) }.to_str() {
+        match CStr::from_ptr($var).to_str() {
             Ok(s) => s.to_string(),
-            Err(e) => {
+            Err(_e) => {
                 todo!();
             }
         }
@@ -158,9 +157,12 @@ pub extern "C" fn exogress_version() -> *const c_char {
 
 ///
 /// Call this function once per the instance at the beginning.
+///
+/// # Safety
+///
+/// This function should passed pointer to valid C strings.
 #[no_mangle]
-#[allow(unused)]
-pub extern "C" fn exogress_instance_init(
+pub unsafe extern "C" fn exogress_instance_init(
     access_key_id: *mut c_char,
     secret_access_key: *mut c_char,
     account: *mut c_char,
@@ -173,9 +175,9 @@ pub extern "C" fn exogress_instance_init(
     });
 
     let access_key_id: AccessKeyId = parse_c_str!(access_key_id);
-    let secret_access_key: String = match unsafe { CStr::from_ptr(secret_access_key) }.to_str() {
+    let secret_access_key: String = match CStr::from_ptr(secret_access_key).to_str() {
         Ok(s) => s.to_string(),
-        Err(e) => {
+        Err(_e) => {
             todo!();
         }
     };
@@ -192,10 +194,10 @@ pub extern "C" fn exogress_instance_init(
     // }
 
     client_builder
-        .access_key_id(access_key_id.clone())
-        .secret_access_key(secret_access_key.clone())
-        .account(account.clone())
-        .project(project.clone())
+        .access_key_id(access_key_id)
+        .secret_access_key(secret_access_key)
+        .account(account)
+        .project(project)
         // .watch_config(watch_config)
         // .profile(None)
         // .labels(labels)
@@ -223,9 +225,12 @@ pub extern "C" fn exogress_instance_init(
 
 #[no_mangle]
 ///
-/// Add a lobel to exogress instance. Should be called before spawning
+/// Add a label to exogress instance. Should be called before spawning
 ///
-pub extern "C" fn exogress_instance_add_label(
+/// # Safety
+///
+/// This function should passed pointer to valid C strings.
+pub unsafe extern "C" fn exogress_instance_add_label(
     instance_id: InstanceId,
     name: *const c_char,
     value: *const c_char,
@@ -243,7 +248,13 @@ pub extern "C" fn exogress_instance_add_label(
 ///
 /// Set config path to exogress instance. Should be called before spawning
 ///
-pub extern "C" fn exogress_instance_set_config_path(instance_id: InstanceId, path: *const c_char) {
+/// # Safety
+///
+/// This function should passed pointer to valid C strings.
+pub unsafe extern "C" fn exogress_instance_set_config_path(
+    instance_id: InstanceId,
+    path: *const c_char,
+) {
     let mut h = STORAGE.write();
     if let Some(&mut InstanceState::Initialized(ref mut cfg)) = h.map.get_mut(&instance_id) {
         let path = read_string!(path);
@@ -271,11 +282,16 @@ pub extern "C" fn exogress_instance_set_watch_config(instance_id: InstanceId, sh
 pub extern "C" fn exogress_instance_spawn(instance_id: InstanceId) {
     let mut h = STORAGE.write();
     let entry = h.map.entry(instance_id);
-    let (client, reload_config_tx, reload_config_rx, stop_rx) = match entry {
+    let SpawnInfo {
+        client,
+        reload_config_tx,
+        reload_config_rx,
+        stop_rx,
+    } = match entry {
         Entry::Occupied(mut occupied) => {
-            let mut value = occupied.get_mut();
+            let value = occupied.get_mut();
             match value {
-                InstanceState::Initialized(cfg) => {
+                InstanceState::Initialized(_) => {
                     // go ahead
                 }
                 InstanceState::Spawned(_) => {
@@ -318,6 +334,12 @@ pub extern "C" fn exogress_instance_spawn(instance_id: InstanceId) {
         Ok::<_, anyhow::Error>(())
     })
     .expect("TODO");
+
+    STORAGE
+        .write()
+        .map
+        .entry(instance_id)
+        .and_modify(|instance| *instance = InstanceState::Stopped);
 }
 
 #[no_mangle]
@@ -329,13 +351,10 @@ pub extern "C" fn exogress_instance_spawn(instance_id: InstanceId) {
 pub extern "C" fn exogress_instance_stop(instance_id: InstanceId) {
     let mut h = STORAGE.write();
 
-    match h.map.get_mut(&instance_id) {
-        Some(InstanceState::Spawned(spawned)) => {
-            if let Some(stop_tx) = spawned.stop_tx.take() {
-                let _ = stop_tx.send(());
-            }
+    if let Some(InstanceState::Spawned(spawned)) = h.map.get_mut(&instance_id) {
+        if let Some(stop_tx) = spawned.stop_tx.take() {
+            let _ = stop_tx.send(());
         }
-        _ => {}
     }
 }
 
@@ -346,10 +365,7 @@ pub extern "C" fn exogress_instance_stop(instance_id: InstanceId) {
 pub extern "C" fn exogress_instance_reload(instance_id: InstanceId) {
     let h = STORAGE.read();
 
-    match h.map.get(&instance_id) {
-        Some(InstanceState::Spawned(spawned)) => {
-            let _ = spawned.reload_config_tx.unbounded_send(());
-        }
-        _ => {}
+    if let Some(InstanceState::Spawned(spawned)) = h.map.get(&instance_id) {
+        let _ = spawned.reload_config_tx.unbounded_send(());
     }
 }

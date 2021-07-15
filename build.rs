@@ -1,10 +1,6 @@
 extern crate cbindgen;
 
-use std::{
-    env,
-    fs::{File, OpenOptions},
-    io::{BufRead, BufReader, Write},
-};
+use std::env;
 
 use cbindgen::Language;
 
