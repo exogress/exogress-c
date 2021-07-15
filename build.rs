@@ -24,7 +24,15 @@ fn main() {
 
     let crate_dir = env::var("CARGO_MANIFEST_DIR").unwrap();
 
-    println!("cargo:rustc-cdylib-link-arg=-Wl,-install_name,@rpath/libexogress.dylib");
+    let os = env::var("CARGO_CFG_TARGET_OS").unwrap();
+    let env = env::var("CARGO_CFG_TARGET_ENV").unwrap();
+
+    match (os.as_str(), env.as_str()) {
+        ("macos", _) | ("ios", _) => {
+            println!("cargo:rustc-cdylib-link-arg=-Wl,-install_name,@rpath/libexogress.dylib");
+        }
+        _ => {}
+    }
 
     match cbindgen::Builder::new()
         .with_crate(crate_dir)
