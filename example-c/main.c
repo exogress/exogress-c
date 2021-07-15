@@ -31,6 +31,11 @@ int main()
             "location-tester"
     );
 
+    if (instance1 < 1) {
+        fprintf(stderr, "RET =  %d\n", instance1);
+
+    }
+
     exogress_instance_add_label(instance1, "label1", "value1");
     exogress_instance_add_label(instance1, "label2", "value2");
     exogress_instance_set_watch_config(instance1, true);

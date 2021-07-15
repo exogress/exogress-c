@@ -16,11 +16,7 @@ fn main() {
                 Some(v)
             }
         })
-        .or_else(|| {
-            env::var("CARGO_PKG_VERSION")
-                .ok()
-                .map(|cargo_version| format!("{}-DEV", cargo_version))
-        })
+        .or_else(|| env::var("CARGO_PKG_VERSION").ok())
         .expect("Failed to generate version");
     println!("cargo:rustc-env=EXOGRESS_VERSION={}", version);
 
