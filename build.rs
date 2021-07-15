@@ -5,6 +5,8 @@ use std::env;
 use cbindgen::Language;
 
 fn main() {
+    cdylib_link_lines::metabuild();
+
     let out_dir = env::var("CARGO_MANIFEST_DIR").unwrap();
     let version = env::var("EXOGRESS_VERSION")
         .ok()
@@ -23,16 +25,6 @@ fn main() {
     let path = format!("{}/{}", out_dir, "exogress.h");
 
     let crate_dir = env::var("CARGO_MANIFEST_DIR").unwrap();
-
-    let os = env::var("CARGO_CFG_TARGET_OS").unwrap();
-    let env = env::var("CARGO_CFG_TARGET_ENV").unwrap();
-
-    match (os.as_str(), env.as_str()) {
-        ("macos", _) | ("ios", _) => {
-            println!("cargo:rustc-cdylib-link-arg=-Wl,-install_name,@rpath/libexogress.dylib");
-        }
-        _ => {}
-    }
 
     match cbindgen::Builder::new()
         .with_crate(crate_dir)
