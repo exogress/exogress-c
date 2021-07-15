@@ -181,11 +181,11 @@ macro_rules! read_string {
     };
 }
 
-#[no_mangle]
 ///
 /// Returns a pointer to C string with Exogress version.
 /// Should be equal to `EXOGRESS_HEADER_VERSION`
 ///
+#[no_mangle]
 pub extern "C" fn exogress_version() -> *const c_char {
     EXOGRESS_VERSION.as_ptr()
 }
