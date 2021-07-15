@@ -1,11 +1,12 @@
 extern crate cbindgen;
 
+use std::{
+    env,
+    fs::{File, OpenOptions},
+    io::{BufRead, BufReader, Write},
+};
+
 use cbindgen::Language;
-use std::env;
-use std::fs::{File, OpenOptions};
-use std::io::BufRead;
-use std::io::BufReader;
-use std::io::Write;
 
 fn main() {
     let out_dir = env::var("CARGO_MANIFEST_DIR").unwrap();

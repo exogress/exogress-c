@@ -1,21 +1,25 @@
-use anyhow::bail;
-use core::{mem, slice};
-use exogress_common::client_core::Client;
-use exogress_common::entities::{
-    AccessKeyId, AccountName, LabelName, LabelValue, ProjectName, SmolStr,
+use core::mem;
+use std::{
+    ffi::{CStr, CString},
+    os::raw::c_char,
+    str::FromStr,
+    sync::Arc,
 };
-use futures::channel::mpsc::{UnboundedReceiver, UnboundedSender};
-use futures::channel::{mpsc, oneshot};
-use hashbrown::hash_map::Entry;
-use hashbrown::HashMap;
+
+use anyhow::bail;
+use exogress_common::{
+    client_core::Client,
+    entities::{AccessKeyId, AccountName, LabelName, LabelValue, ProjectName, SmolStr},
+};
+use futures::channel::{
+    mpsc,
+    mpsc::{UnboundedReceiver, UnboundedSender},
+    oneshot,
+};
+use hashbrown::{hash_map::Entry, HashMap};
 use lazy_static::lazy_static;
 use log::{info, Level, LevelFilter, Metadata, Record};
 use parking_lot::{Once, RwLock};
-use std::ffi::CStr;
-use std::ffi::CString;
-use std::os::raw::c_char;
-use std::str::FromStr;
-use std::sync::Arc;
 use tokio::runtime::Runtime;
 use trust_dns_resolver::{TokioAsyncResolver, TokioHandle};
 
