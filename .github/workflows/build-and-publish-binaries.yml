@@ -145,7 +145,7 @@ jobs:
 
       - name: Upload lib release binary (dylib)
         uses: actions/upload-release-asset@v1.0.2
-        if: matrix.os == 'ubuntu-latest'
+        if: matrix.os == 'macos-latest'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
@@ -156,7 +156,7 @@ jobs:
 
       - name: Upload lib release binary (so)
         uses: actions/upload-release-asset@v1.0.2
-        if: matrix.os == 'macos-latest'
+        if: matrix.os == 'ubuntu-latest'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
