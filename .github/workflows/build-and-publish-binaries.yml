@@ -6,7 +6,7 @@ on:
       - created
 
 jobs:
-  check-version:
+  verify:
     runs-on: ubuntu-latest
     env:
       RUST_BACKTRACE: 1
@@ -33,7 +33,7 @@ jobs:
 #          ./target/debug/exogress-package-publisher --version ${{ github.event.release.tag_name }} check_version
 
   build-and-publish:
-    needs: check-version
+    needs: verify
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -50,7 +50,7 @@ jobs:
           - os: windows-latest
             upload_asset_name: exogress-win32.exe
             target: i686-pc-windows-msvc
-            rustflags: '-C target-feature =+crt-static'
+            rustflags: '-C target-feature=+crt-static'
           - os: windows-latest
             target: x86_64-pc-windows-msvc
             upload_asset_name: exogress-win64.exe
@@ -151,3 +151,35 @@ jobs:
 #          asset_path: ./target/${{ matrix.target }}/release/exogress.exe
 #          asset_name: ${{ matrix.upload_asset_name }}
 #          asset_content_type: application/octet-stream
+
+  publish-header:
+    needs: verify
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v1
+        with:
+          submodules: true
+
+      - name: Install stable toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+
+      - uses: Swatinem/rust-cache@v1
+
+      - name: Build release binary
+        uses: actions-rs/cargo@v1
+        with:
+          command: build
+
+      - name: Upload headers
+        uses: actions/upload-release-asset@v1.0.2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ github.event.release.upload_url }}
+          asset_path: ./exogress.h
+          asset_name: exogress.h
+          asset_content_type: application/octet-stream
+
