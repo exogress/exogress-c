@@ -55,6 +55,10 @@ jobs:
             target: x86_64-pc-windows-msvc
             upload_asset_name: libexogress-win64
             rustflags: '-C target-feature=-crt-static'
+          - os: windows-latest
+            target: aarch64-pc-windows-msvc
+            upload_asset_name: libexogress-aarch64
+            rustflags: '-C target-feature=-crt-static'
           - os: ubuntu-latest
             target: aarch64-unknown-linux-gnu
             upload_asset_name: libexogress-linux-aarch64-gnu
