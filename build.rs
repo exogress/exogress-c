@@ -24,6 +24,8 @@ fn main() {
 
     let crate_dir = env::var("CARGO_MANIFEST_DIR").unwrap();
 
+    println!("cargo:rustc-cdylib-link-arg=-Wl,-install_name,@rpath/libwasmer.dylib");
+
     match cbindgen::Builder::new()
         .with_crate(crate_dir)
         .with_language(Language::C)
